@@ -69,6 +69,25 @@ not a production forecast.
 python3 main.py --query "Show all orders" --predict-total-for-items 2
 ```
 
+## Run UI
+Start the dummy API:
+```bash
+python3 dummy_customer_api.py
+```
+
+In another terminal, start the local UI:
+```bash
+python3 main.py --ui
+```
+
+Open:
+```text
+http://127.0.0.1:8000
+```
+
+The UI also includes an optional "Predict total" field. Enter an item count to
+include the same sklearn regression demo in the rendered results and JSON.
+
 ## Test
 ```bash
 python3 -m pytest
