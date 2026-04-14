@@ -93,6 +93,31 @@ def test_end_to_end_filters_ohio_orders_above_500():
     }
 
 
+def test_run_with_records_preserves_response_and_exposes_validated_orders():
+    session = FakeSession(
+        {
+            "status": "ok",
+            "raw_orders": [
+                "Order 1001: Buyer=John Davis, Location=Columbus, OH, Total=$742.10, Items: laptop, hdmi cable",
+                "Order 1002: Buyer=Sarah Liu, Location=Austin, TX, Total=$156.55, Items: headphones",
+            ],
+        }
+    )
+    api_client = CustomerAPIClient(base_url="http://example.test", session=session)
+    agent = OrderAgent(api_client=api_client, llm_client=FakeLLMClient(), chunk_size=2)
+
+    response, parsed_orders = agent.run_with_records(query="Show all orders")
+
+    assert response.to_dict() == {
+        "orders": [
+            {"orderId": "1001", "buyer": "John Davis", "state": "OH", "total": 742.1},
+            {"orderId": "1002", "buyer": "Sarah Liu", "state": "TX", "total": 156.55},
+        ]
+    }
+    assert [order.orderId for order in parsed_orders] == ["1001", "1002"]
+    assert [len(order.items) for order in parsed_orders] == [2, 1]
+
+
 def test_end_to_end_filters_order_ids_below_threshold():
     session = FakeSession(
         {
