@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from typing import Optional, Sequence
 
 from src.agent import OrderAgent
 from src.api_client import CustomerAPIClient
@@ -10,13 +11,24 @@ from src.env_loader import load_env_files
 from src.logging_config import setup_logging
 
 
-def parse_args() -> argparse.Namespace:
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a whole number") from exc
+
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Parse customer order text into deterministic JSON."
     )
     parser.add_argument(
         "--query",
-        required=True,
+        default=None,
         help="Natural language query to run against the order API.",
     )
     parser.add_argument(
@@ -32,11 +44,23 @@ def parse_args() -> argparse.Namespace:
         help="Maximum number of raw orders to process in one chunk.",
     )
     parser.add_argument(
+        "--predict-total-for-items",
+        type=positive_int,
+        default=None,
+        help=(
+            "Train a tiny sklearn LinearRegression baseline on parsed orders and "
+            "predict total for this item count."
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         default=os.getenv("LOG_LEVEL", "INFO"),
         help="Python logging level. Defaults to LOG_LEVEL or INFO.",
     )
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if not args.query:
+        parser.error("--query is required")
+    return args
 
 
 def main() -> int:
@@ -53,7 +77,29 @@ def main() -> int:
     )
 
     try:
-        response = agent.run(query=args.query, limit=args.limit)
+        if args.predict_total_for_items is None:
+            response = agent.run(query=args.query, limit=args.limit)
+            payload = response.to_dict()
+        else:
+            from src.regression import (
+                InsufficientRegressionData,
+                predict_total_for_item_count,
+                regression_error_response,
+            )
+
+            response, parsed_orders = agent.run_with_records(
+                query=args.query,
+                limit=args.limit,
+            )
+            payload = response.to_dict()
+            try:
+                regression = predict_total_for_item_count(
+                    parsed_orders,
+                    args.predict_total_for_items,
+                )
+            except InsufficientRegressionData as exc:
+                regression = regression_error_response(exc)
+            payload["regression"] = regression.to_dict()
     except Exception as exc:  # pragma: no cover - exercised via CLI only.
         logger.exception("Failed to process query: %s", exc)
         print(
@@ -67,7 +113,7 @@ def main() -> int:
         )
         return 1
 
-    print(json.dumps(response.to_dict(), indent=2))
+    print(json.dumps(payload, indent=2))
     return 0
 
 

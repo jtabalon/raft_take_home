@@ -61,6 +61,31 @@ class OrdersResponse(BaseModel):
         return model_to_dict(self)
 
 
+class RegressionModelSummary(BaseModel):
+    type: str
+    feature: str
+    sample_count: int
+    coefficient: float
+    intercept: float
+
+
+class RegressionPrediction(BaseModel):
+    item_count: int
+    predicted_total: float
+
+
+class RegressionResponse(BaseModel):
+    model: Optional[RegressionModelSummary] = None
+    prediction: Optional[RegressionPrediction] = None
+    note: Optional[str] = None
+    error: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        if hasattr(self, "model_dump"):
+            return self.model_dump(exclude_none=True)
+        return self.dict(exclude_none=True)
+
+
 class InvalidOrder(BaseModel):
     raw_order: str
     error: str

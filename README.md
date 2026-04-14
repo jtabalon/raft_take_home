@@ -59,6 +59,16 @@ The agent can still run without `OPENROUTER_API_KEY`, but it will use determinis
 python3 main.py --query "Show me all orders where the buyer was located in Ohio and total value was over 500"
 ```
 
+## Regression demo
+For a small traditional ML baseline, add `--predict-total-for-items` to train an
+`sklearn.linear_model.LinearRegression` model on the parsed orders from the
+current API response. This is a demonstration feature for the coding challenge,
+not a production forecast.
+
+```bash
+python3 main.py --query "Show all orders" --predict-total-for-items 2
+```
+
 ## Test
 ```bash
 python3 -m pytest

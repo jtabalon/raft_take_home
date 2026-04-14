@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Protocol, TypedDict
+from typing import Any, Dict, List, Optional, Protocol, Tuple, TypedDict
 
 from pydantic import ValidationError
 
@@ -27,6 +27,7 @@ class AgentState(TypedDict):
     raw_orders: List[str]
     chunks: List[List[str]]
     parsed_orders: List[OrderRecord]
+    validated_orders: List[OrderRecord]
     invalid_orders: List[InvalidOrder]
     final_orders: List[Dict[str, Any]]
     errors: List[str]
@@ -217,6 +218,19 @@ class OrderAgent:
         return graph.compile()
 
     def run(self, query: str, limit: Optional[int] = None) -> OrdersResponse:
+        result = self._run_graph(query=query, limit=limit)
+        return validate_model(OrdersResponse, {"orders": result["final_orders"]})
+
+    def run_with_records(
+        self,
+        query: str,
+        limit: Optional[int] = None,
+    ) -> Tuple[OrdersResponse, List[OrderRecord]]:
+        result = self._run_graph(query=query, limit=limit)
+        response = validate_model(OrdersResponse, {"orders": result["final_orders"]})
+        return response, list(result["validated_orders"])
+
+    def _run_graph(self, query: str, limit: Optional[int] = None) -> AgentState:
         state: AgentState = {
             "user_query": query,
             "limit": limit,
@@ -224,12 +238,12 @@ class OrderAgent:
             "raw_orders": [],
             "chunks": [],
             "parsed_orders": [],
+            "validated_orders": [],
             "invalid_orders": [],
             "final_orders": [],
             "errors": [],
         }
-        result = self.graph.invoke(state)
-        return validate_model(OrdersResponse, {"orders": result["final_orders"]})
+        return self.graph.invoke(state)
 
     def parse_user_request(self, state: AgentState) -> Dict[str, Any]:
         deterministic_spec = parse_query_deterministic(state["user_query"])
@@ -324,7 +338,11 @@ class OrderAgent:
                     )
                 )
 
-        return {"parsed_orders": valid_orders, "invalid_orders": invalid_orders}
+        return {
+            "parsed_orders": valid_orders,
+            "validated_orders": valid_orders,
+            "invalid_orders": invalid_orders,
+        }
 
     def filter_records(self, state: AgentState) -> Dict[str, Any]:
         filter_spec = state["filter_spec"]
