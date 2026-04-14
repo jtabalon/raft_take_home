@@ -27,6 +27,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         description="Parse customer order text into deterministic JSON."
     )
     parser.add_argument(
+        "--ui",
+        action="store_true",
+        help="Start a local Flask UI for running natural-language order queries.",
+    )
+    parser.add_argument(
         "--query",
         default=None,
         help="Natural language query to run against the order API.",
@@ -57,9 +62,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=os.getenv("LOG_LEVEL", "INFO"),
         help="Python logging level. Defaults to LOG_LEVEL or INFO.",
     )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host for UI mode. Defaults to 127.0.0.1.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for UI mode. Defaults to 8000.",
+    )
+
     args = parser.parse_args(argv)
-    if not args.query:
-        parser.error("--query is required")
+    if not args.ui and not args.query:
+        parser.error("--query is required unless --ui is set")
     return args
 
 
@@ -70,6 +87,14 @@ def main() -> int:
     logger = logging.getLogger("order_agent.cli")
 
     api_base_url = os.getenv("ORDER_API_BASE_URL", "http://localhost:5001")
+    if args.ui:
+        from src.ui_app import create_app
+
+        app = create_app(api_base_url=api_base_url, chunk_size=args.chunk_size)
+        logger.info("Starting order agent UI at http://%s:%s", args.host, args.port)
+        app.run(host=args.host, port=args.port)
+        return 0
+
     api_client = CustomerAPIClient(base_url=api_base_url)
     agent = OrderAgent(
         api_client=api_client,

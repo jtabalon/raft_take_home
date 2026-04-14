@@ -12,6 +12,7 @@ def test_cli_query_mode_accepts_query():
     args = parse_args(["--query", "Show all orders in Ohio"])
 
     assert args.query == "Show all orders in Ohio"
+    assert args.ui is False
     assert args.predict_total_for_items is None
 
 
@@ -38,3 +39,12 @@ def test_cli_rejects_non_positive_regression_item_count():
                 "0",
             ]
         )
+
+
+def test_ui_mode_accepts_missing_query():
+    args = parse_args(["--ui"])
+
+    assert args.ui is True
+    assert args.query is None
+    assert args.host == "127.0.0.1"
+    assert args.port == 8000
