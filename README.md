@@ -46,6 +46,13 @@ flowchart TD
    ```bash
    python3 dummy_customer_api.py
    ```
+   To smoke-test the API in a browser or with `curl`, open:
+   ```text
+   http://127.0.0.1:5001/api/orders
+   ```
+   Opening `http://127.0.0.1:5001/` returns a short endpoint list.
+   Browser requests for `/favicon.ico` are answered with no content so the
+   development log stays clean.
 3. Configure environment:
    ```bash
    cp .env.example .env.local
@@ -70,20 +77,25 @@ python3 main.py --query "Show all orders" --predict-total-for-items 2
 ```
 
 ## Run UI
-Start the dummy API:
+Use two terminals: one for the dummy customer API and one for the UI.
+
+Terminal 1 starts the dummy API on port `5001`:
 ```bash
 python3 dummy_customer_api.py
 ```
 
-In another terminal, start the local UI:
+Terminal 2 starts the browser UI on port `8000`:
 ```bash
 python3 main.py --ui
 ```
 
-Open:
+Open the UI in your browser:
 ```text
 http://127.0.0.1:8000
 ```
+
+Do not use `http://127.0.0.1:5001` for the UI. Port `5001` is only the mock
+customer API that the agent reads from.
 
 The UI also includes an optional "Predict total" field. Enter an item count to
 include the same sklearn regression demo in the rendered results and JSON.

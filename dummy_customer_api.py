@@ -1,6 +1,6 @@
-# file: dummy_customer_api.py
-from flask import Flask, request, jsonify
 import random
+
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
@@ -12,6 +12,36 @@ ORDERS = [
     "Order 1004: Buyer=Rachel Kim, Location=Seattle, WA, Total=$89.50, Items: coffee maker",
     "Order 1005: Buyer=Chris Myers, Location=Cincinnati, OH, Total=$512.00, Items: monitor, desk lamp"
 ]
+
+
+@app.route("/", methods=["GET"])
+def index():
+    """
+    Give humans opening the mock API in a browser a useful smoke-test response.
+    """
+    return jsonify({
+        "status": "ok",
+        "message": "Dummy customer API is running.",
+        "endpoints": {
+            "orders": "/api/orders",
+            "order_by_id": "/api/order/<order_id>",
+            "health": "/health",
+        },
+    })
+
+
+@app.route("/favicon.ico", methods=["GET"])
+def favicon():
+    return "", 204
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """
+    Lightweight readiness check for local setup and troubleshooting.
+    """
+    return jsonify({"status": "ok"})
+
 
 @app.route("/api/orders", methods=["GET"])
 def get_orders():
