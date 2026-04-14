@@ -82,7 +82,8 @@ class OpenRouterLLMClient:
     def extract_query_spec(self, query: str) -> Optional[OrderQuerySpec]:
         system_prompt = (
             "Extract filter criteria from the user query. Return JSON only. "
-            "Allowed keys: state, min_total, max_total, order_ids, buyer_name, reason. "
+            "Allowed keys: state, min_total, max_total, order_ids, min_order_id, "
+            "max_order_id, buyer_name, reason. "
             "Use a two-letter US state code when possible. Use null for unknown fields. "
             "Do not invent constraints."
         )
@@ -98,6 +99,8 @@ class OpenRouterLLMClient:
                 "min_total": result.min_total,
                 "max_total": result.max_total,
                 "order_ids": result.order_ids,
+                "min_order_id": result.min_order_id,
+                "max_order_id": result.max_order_id,
                 "buyer_name": result.buyer_name,
             },
         )
@@ -346,6 +349,7 @@ def _merge_query_specs(
 
     merged = model_to_dict(deterministic_spec)
     llm_payload = model_to_dict(llm_spec)
+    _drop_llm_total_ranges_that_duplicate_order_id_ranges(merged, llm_payload)
     for key, llm_value in llm_payload.items():
         deterministic_value = merged.get(key)
         if deterministic_value not in (None, [], ""):
@@ -361,6 +365,30 @@ def _merge_query_specs(
     return validate_model(OrderQuerySpec, merged)
 
 
+def _drop_llm_total_ranges_that_duplicate_order_id_ranges(
+    deterministic_payload: Dict[str, Any],
+    llm_payload: Dict[str, Any],
+) -> None:
+    pairs = (
+        ("min_order_id", "min_total"),
+        ("max_order_id", "max_total"),
+    )
+    for order_id_key, total_key in pairs:
+        order_id_value = deterministic_payload.get(order_id_key)
+        total_value = llm_payload.get(total_key)
+        if order_id_value is not None and _same_numeric_value(order_id_value, total_value):
+            llm_payload[total_key] = None
+
+
+def _same_numeric_value(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return False
+    try:
+        return float(left) == float(right)
+    except (TypeError, ValueError):
+        return False
+
+
 def _matches_filter(order: OrderRecord, filter_spec: OrderQuerySpec) -> bool:
     if filter_spec.state and order.state != filter_spec.state:
         return False
@@ -370,6 +398,15 @@ def _matches_filter(order: OrderRecord, filter_spec: OrderQuerySpec) -> bool:
         return False
     if filter_spec.order_ids and order.orderId not in filter_spec.order_ids:
         return False
+    if filter_spec.min_order_id is not None or filter_spec.max_order_id is not None:
+        try:
+            order_id = int(order.orderId)
+        except ValueError:
+            return False
+        if filter_spec.min_order_id is not None and order_id <= filter_spec.min_order_id:
+            return False
+        if filter_spec.max_order_id is not None and order_id >= filter_spec.max_order_id:
+            return False
     if filter_spec.buyer_name and order.buyer.lower() != filter_spec.buyer_name.lower():
         return False
     return True

@@ -20,6 +20,8 @@ class OrderQuerySpec(BaseModel):
     min_total: Optional[float] = None
     max_total: Optional[float] = None
     order_ids: List[str] = Field(default_factory=list)
+    min_order_id: Optional[int] = None
+    max_order_id: Optional[int] = None
     buyer_name: Optional[str] = None
 
     def is_empty(self) -> bool:
@@ -28,6 +30,8 @@ class OrderQuerySpec(BaseModel):
             and self.min_total is None
             and self.max_total is None
             and not self.order_ids
+            and self.min_order_id is None
+            and self.max_order_id is None
             and self.buyer_name is None
         )
 
@@ -78,5 +82,7 @@ class QueryExtractionResult(BaseModel):
     min_total: Optional[float] = None
     max_total: Optional[float] = None
     order_ids: List[str] = Field(default_factory=list)
+    min_order_id: Optional[int] = None
+    max_order_id: Optional[int] = None
     buyer_name: Optional[str] = None
     reason: Optional[str] = None

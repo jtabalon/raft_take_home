@@ -32,6 +32,21 @@ def test_parse_query_deterministic_extracts_state_and_min_total():
     assert spec.min_total == 500.0
 
 
+def test_parse_query_deterministic_extracts_order_id_max_for_underscored_field():
+    spec = parse_query_deterministic("show me all orders_ids less than 1000")
+
+    assert spec.max_order_id == 1000
+    assert spec.max_total is None
+    assert spec.order_ids == []
+
+
+def test_parse_query_deterministic_keeps_total_max_for_generic_orders():
+    spec = parse_query_deterministic("show me all orders less than 1000")
+
+    assert spec.max_total == 1000.0
+    assert spec.max_order_id is None
+
+
 def test_normalize_state_supports_full_names_and_codes():
     assert normalize_state("Ohio") == "OH"
     assert normalize_state("oh") == "OH"
