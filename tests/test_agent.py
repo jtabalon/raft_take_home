@@ -51,6 +51,11 @@ class FakeLLMClient:
         )
 
 
+class ConflictingTotalLLMClient(FakeLLMClient):
+    def extract_query_spec(self, query: str) -> OrderQuerySpec:
+        return validate_model(OrderQuerySpec, {"max_total": 1000})
+
+
 class FakeOpenRouterLLMClient(OpenRouterLLMClient):
     def __init__(self, responses):
         super().__init__(api_key="test-key")
@@ -84,6 +89,55 @@ def test_end_to_end_filters_ohio_orders_above_500():
             {"orderId": "1001", "buyer": "John Davis", "state": "OH", "total": 742.1},
             {"orderId": "1003", "buyer": "Mike Turner", "state": "OH", "total": 1299.99},
             {"orderId": "1005", "buyer": "Chris Myers", "state": "OH", "total": 512.0},
+        ]
+    }
+
+
+def test_end_to_end_filters_order_ids_below_threshold():
+    session = FakeSession(
+        {
+            "status": "ok",
+            "raw_orders": [
+                "Order 999: Buyer=Taylor Reed, Location=Portland, OR, Total=$42.00, Items: cable",
+                "Order 1000: Buyer=Jordan Lee, Location=Denver, CO, Total=$55.00, Items: stand",
+                "Order 1001: Buyer=John Davis, Location=Columbus, OH, Total=$742.10, Items: laptop, hdmi cable",
+            ],
+        }
+    )
+    api_client = CustomerAPIClient(base_url="http://example.test", session=session)
+    agent = OrderAgent(api_client=api_client, llm_client=FakeLLMClient(), chunk_size=2)
+
+    response = agent.run(query="show me all orders_ids less than 1000")
+
+    assert response.to_dict() == {
+        "orders": [
+            {"orderId": "999", "buyer": "Taylor Reed", "state": "OR", "total": 42.0},
+        ]
+    }
+
+
+def test_order_id_range_ignores_llm_total_range_for_same_threshold():
+    session = FakeSession(
+        {
+            "status": "ok",
+            "raw_orders": [
+                "Order 999: Buyer=Taylor Reed, Location=Portland, OR, Total=$2000.00, Items: cable",
+                "Order 1001: Buyer=John Davis, Location=Columbus, OH, Total=$42.00, Items: laptop",
+            ],
+        }
+    )
+    api_client = CustomerAPIClient(base_url="http://example.test", session=session)
+    agent = OrderAgent(
+        api_client=api_client,
+        llm_client=ConflictingTotalLLMClient(),
+        chunk_size=2,
+    )
+
+    response = agent.run(query="show me all orders_ids less than 1000")
+
+    assert response.to_dict() == {
+        "orders": [
+            {"orderId": "999", "buyer": "Taylor Reed", "state": "OR", "total": 2000.0},
         ]
     }
 
@@ -145,6 +199,31 @@ def test_openrouter_query_extraction_accepts_null_order_ids():
 
     assert spec.state == "OH"
     assert spec.min_total == 500
+    assert spec.order_ids == []
+
+
+def test_openrouter_query_extraction_accepts_order_id_range_fields():
+    llm = FakeOpenRouterLLMClient(
+        [
+            """
+            {
+              "state": null,
+              "min_total": null,
+              "max_total": null,
+              "order_ids": null,
+              "min_order_id": null,
+              "max_order_id": 1000,
+              "buyer_name": null,
+              "reason": "Order IDs below 1000"
+            }
+            """
+        ]
+    )
+
+    spec = llm.extract_query_spec("show me all orders_ids less than 1000")
+
+    assert spec.max_order_id == 1000
+    assert spec.max_total is None
     assert spec.order_ids == []
 
 

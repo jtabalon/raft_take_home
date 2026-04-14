@@ -59,6 +59,7 @@ STATE_NAME_TO_CODE = {
 
 
 ORDER_ID_RE = re.compile(r"\bOrder\s*#?\s*(\d+)\b", re.IGNORECASE)
+ORDER_ID_FIELD_PATTERN = r"orders?[_\s-]?ids?"
 BUYER_RE = re.compile(
     r"Buyer\s*[:=]\s*(.+?)(?=,\s*(?:Location|Total|Items?)\b|\|\s*(?:Location|Total|Items?)\b|$)",
     re.IGNORECASE,
@@ -150,6 +151,8 @@ def parse_query_deterministic(query: str) -> OrderQuerySpec:
         "min_total": None,
         "max_total": None,
         "order_ids": [],
+        "min_order_id": None,
+        "max_order_id": None,
         "buyer_name": None,
     }
 
@@ -171,6 +174,12 @@ def parse_query_deterministic(query: str) -> OrderQuerySpec:
         r"\b(?:under|below|less than)\s+\$?(\d+(?:\.\d+)?)",
         r"\b(?:at most|maximum(?: total)?(?: of)?)\s+\$?(\d+(?:\.\d+)?)",
     ]
+    order_id_min_patterns = [
+        rf"\b{ORDER_ID_FIELD_PATTERN}\b\s+(?:is|are)?\s*(?:over|above|greater than|more than)\s+(\d+)\b",
+    ]
+    order_id_max_patterns = [
+        rf"\b{ORDER_ID_FIELD_PATTERN}\b\s+(?:is|are)?\s*(?:under|below|less than)\s+(\d+)\b",
+    ]
 
     for pattern in min_patterns:
         match = re.search(pattern, lowered)
@@ -184,11 +193,26 @@ def parse_query_deterministic(query: str) -> OrderQuerySpec:
             payload["max_total"] = float(match.group(1))
             break
 
+    for pattern in order_id_min_patterns:
+        match = re.search(pattern, lowered)
+        if match:
+            payload["min_order_id"] = int(match.group(1))
+            payload["min_total"] = None
+            break
+
+    for pattern in order_id_max_patterns:
+        match = re.search(pattern, lowered)
+        if match:
+            payload["max_order_id"] = int(match.group(1))
+            payload["max_total"] = None
+            break
+
     order_id_matches = []
     order_id_patterns = [
         r"\border\s*#?\s*(\d{3,})\b",
         r"\border\s+id\s*#?\s*(\d{3,})\b",
         r"\border\s+ids?\s*[:#]?\s*([\d,\s]+)\b",
+        rf"\b{ORDER_ID_FIELD_PATTERN}\b\s*[:#]?\s*([\d,\s]+)\b",
     ]
     for pattern in order_id_patterns:
         for match in re.finditer(pattern, query, re.IGNORECASE):
