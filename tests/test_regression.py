@@ -1,3 +1,5 @@
+import builtins
+
 import pytest
 
 from src.models import OrderRecord, validate_model
@@ -48,4 +50,22 @@ def test_predict_total_for_item_count_requires_enough_distinct_data():
     ]
 
     with pytest.raises(InsufficientRegressionData):
+        predict_total_for_item_count(orders, item_count=2)
+
+
+def test_predict_total_for_item_count_explains_missing_sklearn(monkeypatch):
+    orders = [
+        make_order(1001, ["one"], 100.0),
+        make_order(1002, ["one", "two", "three"], 300.0),
+    ]
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "sklearn.linear_model":
+            raise ModuleNotFoundError("No module named 'sklearn'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(RuntimeError, match="scikit-learn is required"):
         predict_total_for_item_count(orders, item_count=2)

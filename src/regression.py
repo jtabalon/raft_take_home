@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from typing import Iterable, List
 
-from sklearn.linear_model import LinearRegression
-
 from src.models import (
     OrderRecord,
     RegressionModelSummary,
@@ -56,6 +54,14 @@ def predict_total_for_item_count(
 
     x_values = [[row.item_count] for row in rows]
     y_values = [row.total for row in rows]
+
+    try:
+        from sklearn.linear_model import LinearRegression
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "scikit-learn is required for regression predictions. "
+            "Run `python3 -m pip install -r requirements.txt` in your virtual environment."
+        ) from exc
 
     model = LinearRegression()
     model.fit(x_values, y_values)

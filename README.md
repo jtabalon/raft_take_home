@@ -42,6 +42,8 @@ flowchart TD
    ```bash
    python3 -m pip install -r requirements.txt
    ```
+   If you already had a virtual environment before pulling new changes, run this
+   command again so newly added packages such as `scikit-learn` are installed.
 2. Start the dummy API:
    ```bash
    python3 dummy_customer_api.py
