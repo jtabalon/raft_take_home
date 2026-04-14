@@ -92,3 +92,10 @@ include the same sklearn regression demo in the rendered results and JSON.
 ```bash
 python3 -m pytest
 ```
+
+## CI
+This repository includes a lightweight GitHub Actions workflow that runs on
+pushes and pull requests. The workflow installs dependencies and runs the test
+suite with `pytest`, covering the parser, agent behavior, CLI, UI routes, and
+regression demo without adding unnecessary deployment infrastructure for this
+take-home project.
