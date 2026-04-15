@@ -6,6 +6,7 @@ from flask import Flask, render_template_string, request
 
 from src.agent import OrderAgent
 from src.api_client import CustomerAPIClient
+from src.logging_config import new_request_id, request_id_context
 from src.regression import (
     InsufficientRegressionData,
     predict_total_for_item_count,
@@ -108,7 +109,11 @@ PAGE_TEMPLATE = """
 
     .form-row {
       display: grid;
-      grid-template-columns: minmax(120px, 180px) minmax(180px, 240px) auto;
+      grid-template-columns:
+        minmax(120px, 180px)
+        minmax(120px, 180px)
+        minmax(180px, 240px)
+        auto;
       gap: 16px;
       align-items: start;
       margin-top: 16px;
@@ -292,6 +297,11 @@ PAGE_TEMPLATE = """
           <input id="limit" name="limit" type="number" min="1" value="{{ limit or '' }}" placeholder="Optional">
         </div>
         <div>
+          <label for="chunk_size">Chunk size</label>
+          <input id="chunk_size" name="chunk_size" type="number" min="1" value="{{ chunk_size }}" data-default-value="{{ default_chunk_size }}">
+          <span class="help-text">How many raw orders to parse per batch.</span>
+        </div>
+        <div>
           <label for="predict_total_for_items">Predict total</label>
           <input id="predict_total_for_items" name="predict_total_for_items" type="number" min="1" value="{{ predict_total_for_items or '' }}" placeholder="Item count">
           <span class="help-text">Optional sklearn baseline</span>
@@ -370,6 +380,8 @@ PAGE_TEMPLATE = """
     clearButton.addEventListener("click", () => {
       document.getElementById("query").value = "";
       document.getElementById("limit").value = "";
+      const chunkSizeInput = document.getElementById("chunk_size");
+      chunkSizeInput.value = chunkSizeInput.dataset.defaultValue;
       document.getElementById("predict_total_for_items").value = "";
       document.getElementById("query").focus();
     });
@@ -382,20 +394,22 @@ PAGE_TEMPLATE = """
 def create_app(
     api_base_url: str = "http://localhost:5001",
     chunk_size: int = 50,
-    agent_factory: Optional[Callable[[], AgentRunner]] = None,
+    agent_factory: Optional[Callable[[int], AgentRunner]] = None,
 ) -> Flask:
     app = Flask(__name__)
     logger = logging.getLogger("order_agent.ui")
+    default_chunk_size = max(1, chunk_size)
 
-    def build_agent() -> AgentRunner:
+    def build_agent(selected_chunk_size: int) -> AgentRunner:
         if agent_factory is not None:
-            return agent_factory()
+            return agent_factory(selected_chunk_size)
         api_client = CustomerAPIClient(base_url=api_base_url)
-        return OrderAgent(api_client=api_client, chunk_size=chunk_size)
+        return OrderAgent(api_client=api_client, chunk_size=selected_chunk_size)
 
     def render_page(
         query: str = EXAMPLE_QUERIES[0],
         limit: Optional[int] = None,
+        chunk_size_value=default_chunk_size,
         predict_total_for_items: Optional[int] = None,
         has_result: bool = False,
         response_payload: Optional[dict] = None,
@@ -407,6 +421,8 @@ def create_app(
             examples=EXAMPLE_QUERIES,
             query=query,
             limit=limit,
+            chunk_size=chunk_size_value,
+            default_chunk_size=default_chunk_size,
             predict_total_for_items=predict_total_for_items,
             has_result=has_result,
             orders=payload.get("orders", []),
@@ -423,6 +439,7 @@ def create_app(
     def query_orders():
         query = request.form.get("query", "").strip()
         limit_text = request.form.get("limit", "").strip()
+        chunk_size_text = request.form.get("chunk_size", "").strip()
         predict_text = request.form.get("predict_total_for_items", "").strip()
         try:
             limit = int(limit_text) if limit_text else None
@@ -436,20 +453,46 @@ def create_app(
             ), 400
 
         try:
+            selected_chunk_size = (
+                int(chunk_size_text) if chunk_size_text else default_chunk_size
+            )
+        except ValueError:
+            return render_page(
+                query=query,
+                limit=limit,
+                chunk_size_value=chunk_size_text,
+                predict_total_for_items=None,
+                has_result=False,
+                error="Chunk size must be a whole number.",
+            ), 400
+
+        try:
             predict_total_for_items = int(predict_text) if predict_text else None
         except ValueError:
             return render_page(
                 query=query,
                 limit=limit,
+                chunk_size_value=selected_chunk_size,
                 predict_total_for_items=None,
                 has_result=False,
                 error="Prediction item count must be a whole number.",
+            ), 400
+
+        if selected_chunk_size < 1:
+            return render_page(
+                query=query,
+                limit=limit,
+                chunk_size_value=selected_chunk_size,
+                predict_total_for_items=predict_total_for_items,
+                has_result=False,
+                error="Chunk size must be at least 1.",
             ), 400
 
         if predict_total_for_items is not None and predict_total_for_items < 1:
             return render_page(
                 query=query,
                 limit=limit,
+                chunk_size_value=selected_chunk_size,
                 predict_total_for_items=None,
                 has_result=False,
                 error="Prediction item count must be at least 1.",
@@ -459,42 +502,49 @@ def create_app(
             return render_page(
                 query=query,
                 limit=limit,
+                chunk_size_value=selected_chunk_size,
                 predict_total_for_items=predict_total_for_items,
                 has_result=False,
                 error="Enter a prompt before running the agent.",
             ), 400
 
-        try:
-            agent = build_agent()
-            if predict_total_for_items is None:
-                response = agent.run(query=query, limit=limit)
-                payload = response.to_dict()
-            else:
-                response, parsed_orders = agent.run_with_records(query=query, limit=limit)
-                payload = response.to_dict()
-                try:
-                    regression = predict_total_for_item_count(
-                        parsed_orders,
-                        predict_total_for_items,
+        with request_id_context(new_request_id()):
+            try:
+                agent = build_agent(selected_chunk_size)
+                if predict_total_for_items is None:
+                    response = agent.run(query=query, limit=limit)
+                    payload = response.to_dict()
+                else:
+                    response, parsed_orders = agent.run_with_records(
+                        query=query,
+                        limit=limit,
                     )
-                except InsufficientRegressionData as exc:
-                    regression = regression_error_response(exc)
-                payload["regression"] = regression.to_dict()
-        except Exception as exc:  # pragma: no cover - route-level defensive logging.
-            logger.exception("Failed to process UI query: %s", exc)
-            payload = {"orders": [], "error": str(exc)}
-            return render_page(
-                query=query,
-                limit=limit,
-                predict_total_for_items=predict_total_for_items,
-                has_result=True,
-                response_payload=payload,
-                error=str(exc),
-            ), 500
+                    payload = response.to_dict()
+                    try:
+                        regression = predict_total_for_item_count(
+                            parsed_orders,
+                            predict_total_for_items,
+                        )
+                    except InsufficientRegressionData as exc:
+                        regression = regression_error_response(exc)
+                    payload["regression"] = regression.to_dict()
+            except Exception as exc:  # pragma: no cover - route-level defensive logging.
+                logger.exception("Failed to process UI query: %s", exc)
+                payload = {"orders": [], "error": str(exc)}
+                return render_page(
+                    query=query,
+                    limit=limit,
+                    chunk_size_value=selected_chunk_size,
+                    predict_total_for_items=predict_total_for_items,
+                    has_result=True,
+                    response_payload=payload,
+                    error=str(exc),
+                ), 500
 
         return render_page(
             query=query,
             limit=limit,
+            chunk_size_value=selected_chunk_size,
             predict_total_for_items=predict_total_for_items,
             has_result=True,
             response_payload=payload,

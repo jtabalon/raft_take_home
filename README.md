@@ -117,6 +117,8 @@ customer API that the agent reads from.
 
 The UI also includes an optional "Predict total" field. Enter an item count to
 include the same sklearn regression demo in the rendered results and JSON.
+Use "Chunk size" to control how many raw orders the agent parses per batch;
+the default comes from `python3 main.py --ui --chunk-size`.
 
 ## Test
 ```bash
