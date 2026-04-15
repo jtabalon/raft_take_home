@@ -68,6 +68,22 @@ The agent can still run without `OPENROUTER_API_KEY`, but it will use determinis
 python3 main.py --query "Show me all orders where the buyer was located in Ohio and total value was over 500"
 ```
 
+To see more detailed local logs for a single run, pass `--log-level DEBUG`:
+```bash
+python3 main.py --log-level DEBUG --query "Show all orders"
+```
+
+You can also set the default in `.env.local`:
+```text
+LOG_LEVEL=DEBUG
+```
+
+Logs include a short `request_id` so messages from the same CLI query or UI
+form submission can be traced together:
+```text
+2026-04-15 10:30:00,000 | INFO | request_id=7f3a21c9 | order_agent.agent | Finished agent run; elapsed_ms=12.34 final_order_count=3
+```
+
 ## Regression demo
 For a small traditional ML baseline, add `--predict-total-for-items` to train an
 `sklearn.linear_model.LinearRegression` model on the parsed orders from the

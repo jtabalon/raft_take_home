@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any, Dict, List, Optional, Protocol, Tuple, TypedDict
 
 from pydantic import ValidationError
@@ -243,7 +244,20 @@ class OrderAgent:
             "final_orders": [],
             "errors": [],
         }
-        return self.graph.invoke(state)
+        started_at = time.perf_counter()
+        self.logger.info(
+            "Starting agent run; query_length=%s limit=%s",
+            len(query),
+            limit,
+        )
+        result = self.graph.invoke(state)
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        self.logger.info(
+            "Finished agent run; elapsed_ms=%.2f final_order_count=%s",
+            elapsed_ms,
+            len(result["final_orders"]),
+        )
+        return result
 
     def parse_user_request(self, state: AgentState) -> Dict[str, Any]:
         deterministic_spec = parse_query_deterministic(state["user_query"])

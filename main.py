@@ -8,7 +8,7 @@ from typing import Optional, Sequence
 from src.agent import OrderAgent
 from src.api_client import CustomerAPIClient
 from src.env_loader import load_env_files
-from src.logging_config import setup_logging
+from src.logging_config import new_request_id, request_id_context, setup_logging
 
 
 def positive_int(value: str) -> int:
@@ -95,50 +95,51 @@ def main() -> int:
         app.run(host=args.host, port=args.port)
         return 0
 
-    api_client = CustomerAPIClient(base_url=api_base_url)
-    agent = OrderAgent(
-        api_client=api_client,
-        chunk_size=args.chunk_size,
-    )
-
-    try:
-        if args.predict_total_for_items is None:
-            response = agent.run(query=args.query, limit=args.limit)
-            payload = response.to_dict()
-        else:
-            from src.regression import (
-                InsufficientRegressionData,
-                predict_total_for_item_count,
-                regression_error_response,
-            )
-
-            response, parsed_orders = agent.run_with_records(
-                query=args.query,
-                limit=args.limit,
-            )
-            payload = response.to_dict()
-            try:
-                regression = predict_total_for_item_count(
-                    parsed_orders,
-                    args.predict_total_for_items,
-                )
-            except InsufficientRegressionData as exc:
-                regression = regression_error_response(exc)
-            payload["regression"] = regression.to_dict()
-    except Exception as exc:  # pragma: no cover - exercised via CLI only.
-        logger.exception("Failed to process query: %s", exc)
-        print(
-            json.dumps(
-                {
-                    "orders": [],
-                    "error": str(exc),
-                },
-                indent=2,
-            )
+    with request_id_context(new_request_id()):
+        api_client = CustomerAPIClient(base_url=api_base_url)
+        agent = OrderAgent(
+            api_client=api_client,
+            chunk_size=args.chunk_size,
         )
-        return 1
 
-    print(json.dumps(payload, indent=2))
+        try:
+            if args.predict_total_for_items is None:
+                response = agent.run(query=args.query, limit=args.limit)
+                payload = response.to_dict()
+            else:
+                from src.regression import (
+                    InsufficientRegressionData,
+                    predict_total_for_item_count,
+                    regression_error_response,
+                )
+
+                response, parsed_orders = agent.run_with_records(
+                    query=args.query,
+                    limit=args.limit,
+                )
+                payload = response.to_dict()
+                try:
+                    regression = predict_total_for_item_count(
+                        parsed_orders,
+                        args.predict_total_for_items,
+                    )
+                except InsufficientRegressionData as exc:
+                    regression = regression_error_response(exc)
+                payload["regression"] = regression.to_dict()
+        except Exception as exc:  # pragma: no cover - exercised via CLI only.
+            logger.exception("Failed to process query: %s", exc)
+            print(
+                json.dumps(
+                    {
+                        "orders": [],
+                        "error": str(exc),
+                    },
+                    indent=2,
+                )
+            )
+            return 1
+
+        print(json.dumps(payload, indent=2))
     return 0
 
 

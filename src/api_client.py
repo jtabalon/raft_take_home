@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -26,11 +27,20 @@ class CustomerAPIClient:
             params["limit"] = limit
 
         url = "{base_url}/api/orders".format(base_url=self.base_url)
+        started_at = time.perf_counter()
         self.logger.info("Fetching orders from customer API")
         response = self.session.get(url, params=params, timeout=self.timeout)
         response.raise_for_status()
         payload = response.json()
-        return self._extract_orders(payload)
+        orders = self._extract_orders(payload)
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        self.logger.info(
+            "Fetched customer API orders; status_code=%s record_count=%s elapsed_ms=%.2f",
+            getattr(response, "status_code", "unknown"),
+            len(orders),
+            elapsed_ms,
+        )
+        return orders
 
     def _extract_orders(self, payload: Dict[str, Any]) -> List[str]:
         orders = self._find_orders_list(payload)

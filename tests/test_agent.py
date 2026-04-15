@@ -1,7 +1,9 @@
+import logging
 from typing import Any, Dict, Optional
 
 from src.agent import OpenRouterLLMClient, OrderAgent
 from src.api_client import APIResponseError, CustomerAPIClient
+from src.logging_config import request_id_context, setup_logging
 from src.models import OrderQuerySpec, OrderRecord, validate_model
 
 
@@ -200,6 +202,52 @@ def test_customer_api_client_handles_schema_errors():
         assert "orders list" in str(exc)
     else:  # pragma: no cover - defensive assertion.
         raise AssertionError("Expected APIResponseError")
+
+
+def test_customer_api_client_logs_fetch_count_and_duration_without_payload(caplog):
+    setup_logging("INFO")
+    caplog.set_level(logging.INFO, logger="order_agent.api_client")
+    session = FakeSession(
+        {
+            "status": "ok",
+            "raw_orders": [
+                "Order 1001: Buyer=Sensitive Buyer, Location=Columbus, OH, Total=$1.00, Items: cable",
+            ],
+        }
+    )
+    api_client = CustomerAPIClient(base_url="http://example.test", session=session)
+
+    orders = api_client.fetch_orders()
+
+    assert len(orders) == 1
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("record_count=1" in message for message in messages)
+    assert any("elapsed_ms=" in message for message in messages)
+    assert "Sensitive Buyer" not in caplog.text
+
+
+def test_agent_run_logs_timing_with_request_id(caplog):
+    setup_logging("INFO")
+    caplog.set_level(logging.INFO, logger="order_agent.agent")
+    session = FakeSession(
+        {
+            "status": "ok",
+            "raw_orders": [
+                "Order 1001: Buyer=John Davis, Location=Columbus, OH, Total=$742.10, Items: laptop, hdmi cable",
+            ],
+        }
+    )
+    api_client = CustomerAPIClient(base_url="http://example.test", session=session)
+    agent = OrderAgent(api_client=api_client, llm_client=FakeLLMClient(), chunk_size=2)
+
+    with request_id_context("req-agent"):
+        agent.run(query="Show all orders")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Starting agent run" in message for message in messages)
+    assert any("Finished agent run" in message for message in messages)
+    assert any("final_order_count=1" in message for message in messages)
+    assert {record.request_id for record in caplog.records} == {"req-agent"}
 
 
 def test_openrouter_query_extraction_accepts_null_order_ids():
